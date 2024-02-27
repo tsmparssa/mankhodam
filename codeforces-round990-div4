@@ -1,0 +1,223 @@
+import numpy as np
+import pandas as pd
+import os
+import hashlib
+import glob as gb
+import cv2
+import seaborn as sns
+import tensorflow as tf
+from tensorflow import keras
+from matplotlib.pyplot import imread , imshow
+from skimage.transform import  resize as imresize
+
+import matplotlib.pyplot as plt
+from tensorflow.keras.layers import Dense,Flatten , Conv2D , MaxPooling2D , Dropout
+from tensorflow.keras.models import Model , Sequential
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.layers.experimental.preprocessing import Rescaling
+from tensorflow.keras.preprocessing import image_dataset_from_directory
+
+
+
+
+print(os.path.exists("./archive/Output Dataset/Output Dataset/Car-Bike-Dataset/" ))
+
+all_data = "./archive/Output Dataset/Output Dataset/Car-Bike-Dataset/"
+
+
+for folder in  os.listdir(all_data) : 
+    files = gb.glob(pathname= str( all_data + folder + '/*'))
+    print(f'The data , found {len(files)} in folder {folder}')
+
+class_names = os.listdir(all_data)
+print(class_names)
+
+
+# Function To Remove Duplicate Images
+def file_hash(filename):
+    with open(filename,'rb') as f:
+        return md5(f.read()).hexdigest()
+    
+for x in class_names:
+    os.chdir("C:/Users/user/Desktop/kaggle")
+    print(os.getcwd())
+    os.chdir("./archive/Output Dataset/Output Dataset/Car-Bike-Dataset/" + str(x))
+    print(os.getcwd())
+
+    files_list = os.listdir('.')
+    print("the number of images in", str(x) , " is ", len(files_list))
+
+    duplicates=[]
+    hash_keys=dict()
+    for index, filename in enumerate(os.listdir('.')):
+        if os.path.isfile(filename):
+            with open(filename, 'rb') as f:
+                filehash = hashlib.md5(f.read()).hexdigest()
+            if filehash not in hash_keys:
+                hash_keys[filehash]=index
+            else:
+                duplicates.append((index,hash_keys[filehash]))
+            
+    print("the number of duplicate images in" , str(x) , " is " , len(duplicates))
+    print(duplicates)
+    for file_indexes in duplicates[:30]:
+        try:
+            plt.subplot(121),plt.imshow(imread(files_list[file_indexes[1]]))
+            plt.title(file_indexes[1]),plt.xticks([]),plt.yticks([])
+
+            plt.subplot(122),plt.imshow(imread(files_list[file_indexes[0]]))
+            plt.title(str(file_indexes[0])+ 'duplicate'),plt.xticks([]),plt.yticks([])
+            plt.show()
+
+        except OSError as e:
+            continue
+
+    for index in duplicates:
+        os.remove(files_list[index[0]])
+
+ 
+
+rock_types_dict = {'Bike':0, 'Car':1}
+
+def getcode(n) : 
+    for x , y in rock_types_dict.items() : 
+        if n == y : 
+            return x
+os.chdir("C:/Users/user/Desktop/kaggle")
+size = []
+for folder in  os.listdir(all_data) : 
+    files = gb.glob(pathname= str( all_data + folder + '/*.jpg'))
+    for file in files: 
+        image = plt.imread(file)
+        size.append(image.shape)
+pd.Series(size).value_counts()
+
+
+from pathlib import Path
+import imghdr
+
+data_dir = "./archive/Output Dataset/Output Dataset/Car-Bike-Dataset/"
+image_extensions = [".png", ".jpg"]  # add there all your images file extensions
+
+img_type_accepted_by_tf = ["bmp", "gif", "jpeg", "png"]
+for filepath in Path(data_dir).rglob("*"):
+    if filepath.suffix.lower() in image_extensions:
+        img_type = imghdr.what(filepath)
+        if img_type is None:
+            print(f"{filepath} is not an image")
+        elif img_type not in img_type_accepted_by_tf:
+            print(f"{filepath} is a {img_type}, not accepted by TensorFlow")
+
+
+
+# 80% training Data
+train = image_dataset_from_directory(
+    all_data,   #directory
+    validation_split=0.2,
+    subset='training',
+    labels='inferred',
+    label_mode='categorical',
+    image_size=[224, 224],
+    seed=123,
+    interpolation='nearest',
+    batch_size=64,
+    shuffle=True,
+)
+
+# 20% testing Data
+test = image_dataset_from_directory(
+    all_data,    #directory
+    validation_split=0.2,
+    subset='validation',
+    labels='inferred',
+    label_mode='categorical',
+    image_size=[224, 224],
+    seed=123,
+    interpolation='nearest',
+    batch_size=64,
+    shuffle=False,
+)
+
+# now building the CNN model by Keras , using Conv2D layers , MaxPooling & Denses
+
+# Initialising the CNN
+KerasModel = keras.models.Sequential([
+    
+#1 - Convolution
+        Rescaling(1./255 ,input_shape=(224,224,3)),
+
+        keras.layers.Conv2D(16, 3, padding='same', activation='relu'),
+        keras.layers.MaxPool2D(),
+    
+#2 - Pooling
+# Hidden Layer 1
+        keras.layers.Conv2D(32, 3, padding='same', activation='relu'),
+        keras.layers.MaxPool2D(),
+
+# Adding a second convolution layer
+# where relu turns negative values in images to 0
+        keras.layers.Conv2D(64, 3, padding='same', activation='relu'),        
+        keras.layers.MaxPool2D(),
+
+# include dropout with probability of 0.2 to avoid overfitting
+        keras.layers.Dropout(0.2) , 
+    
+#3 - Flattening
+# converts the matrix in a single array
+        keras.layers.Flatten() , 
+    
+#4 - Full Connection    
+        keras.layers.Dense(128,activation='relu') ,    
+
+#5 Last layer, using softmax to 2 classes
+        keras.layers.Dense(2,activation='softmax') , 
+        ])
+
+
+# now using adam optimizer , & sparse categorical crossentropy loss to compile the model
+
+KerasModel.compile(loss='categorical_crossentropy',optimizer='adam' , metrics=['accuracy'])
+
+# Set callback functions to early stop training 
+
+mycallbacks = [EarlyStopping(monitor='val_loss', patience=5,  restore_best_weights=True)]
+ThisModel = KerasModel.fit(train,validation_data=test, epochs=30, callbacks=mycallbacks )
+
+# Evaluation Model
+KerasModel.evaluate(test)
+
+pred_dataset = "./archive/Output Dataset/Output Dataset/"
+
+X_pred = []
+files = gb.glob(pathname= str( pred_dataset + 'predict/*'))
+for file in files: 
+    image = cv2.imread(file)
+    image_array = cv2.resize(image , (224,224))
+    X_pred.append(list(image_array)) 
+
+print(f'we have {len(X_pred)} items in X_pred')
+
+X_pred_array = np.array(X_pred)
+print(f'X_pred shape  is {X_pred_array.shape}')
+
+# now to predict X test
+y_pred = KerasModel.predict(test)
+
+print('Prediction Shape is {}'.format(y_pred.shape))
+
+# now it's time to redict X Predict
+
+y_result = KerasModel.predict(X_pred_array)
+
+print('Prediction Shape is {}'.format(y_result.shape))
+
+# show random redicted pictures & its predicting category
+
+plt.figure(figsize=(20,20))
+for n , i in enumerate(list(np.random.randint(0,len(X_pred),20))) : 
+    plt.subplot(6,6,n+1)
+    plt.imshow(X_pred[i])    
+    plt.axis('off')
+    plt.title(getcode(np.argmax(y_result[i])))
+
+plt.show()
